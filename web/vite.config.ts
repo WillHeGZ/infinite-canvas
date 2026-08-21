@@ -50,4 +50,24 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
     },
+    server: {
+        proxy: {
+            // Agnes API gateway proxy (dev only; production connects directly).
+            "/api/ai": {
+                target: "https://apihub.agnes-ai.com",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/ai/, ""),
+            },
+            "/api/image-proxy": {
+                target: "https://platform-outputs.agnes-ai.space",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/image-proxy/, ""),
+            },
+            "/api/proxy": {
+                target: "https://platform-outputs.agnes-ai.space",
+                changeOrigin: true,
+                ws: true,
+            },
+        },
+    },
 });

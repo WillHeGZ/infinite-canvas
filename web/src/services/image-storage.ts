@@ -19,13 +19,63 @@ const videoLogStore = localforage.createInstance({ name: "infinite-canvas", stor
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    let blob: Blob;
+    if (typeof input === "string" && isAgnesMediaUrl(input)) {
+        // Agnes image URLs may reject CORS fetches; try dev proxies, then keep the remote URL as a last resort.
+        const fetched = await fetchAgnesImageBlob(input);
+        if (!fetched) {
+            const meta = await readImageMeta(input);
+            return { url: input, storageKey: "", width: meta.width, height: meta.height, bytes: 0, mimeType: meta.mimeType || "image/png" };
+        }
+        blob = fetched;
+    } else {
+        blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    }
     const storageKey = `image:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = await readImageMeta(url);
     return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+}
+
+function isAgnesMediaUrl(url: string) {
+    return /^https?:\/\//i.test(url) && url.toLowerCase().includes("agnes");
+}
+
+async function fetchAgnesImageBlob(url: string): Promise<Blob | null> {
+    const attempts: Array<() => Promise<Blob | null>> = [
+        () => fetchBlobWithTimeout(url, { mode: "cors" }),
+        () => {
+            const urlObj = new URL(url);
+            return fetchBlobWithTimeout(`/api/image-proxy${urlObj.pathname}${urlObj.search}`);
+        },
+        () => fetchBlobWithTimeout(`/api/proxy?url=${encodeURIComponent(url)}`),
+    ];
+    for (const attempt of attempts) {
+        try {
+            // In production the proxy paths fall back to the SPA shell (200 + HTML);
+            // only accept real image blobs so a bad fetch can fall through to the next attempt.
+            const blob = await attempt();
+            if (blob) return blob;
+        } catch {
+            // Try the next fallback.
+        }
+    }
+    return null;
+}
+
+async function fetchBlobWithTimeout(input: string, init?: RequestInit): Promise<Blob | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+        const response = await fetch(input, { ...init, signal: controller.signal });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return blob.type.startsWith("image/") ? blob : null;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {

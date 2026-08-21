@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-<a href="https://trendshift.io/repositories/50077?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/50077" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/50077?utm_source=repository-badge&utm_medium=badge&utm_campaign=badge-repository-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/50077" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"/></a>
 </p>
 
 <p align="center">
@@ -34,10 +34,10 @@
 <table>
   <tr>
     <td width="190" align="center">
-      <a href="https://www.atlascloud.ai/zh?utm_source=github&amp;utm_medium=link&amp;utm_campaign=infinite-canvas" target="_blank" rel="noopener noreferrer"><img src="assets/atlascloud.svg" width="163" alt="Atlas Cloud"></a>
+      <a href="https://www.atlascloud.ai/zh?utm_source=github&utm_medium=link&utm_campaign=infinite-canvas" target="_blank" rel="noopener noreferrer"><img src="assets/atlascloud.svg" width="163" alt="Atlas Cloud"></a>
     </td>
     <td>
-      <a href="https://www.atlascloud.ai/zh?utm_source=github&amp;utm_medium=link&amp;utm_campaign=infinite-canvas" target="_blank" rel="noopener noreferrer">Atlas Cloud</a> is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities. Check out <a href="https://www.atlascloud.ai/console/coding-plan" target="_blank" rel="noopener noreferrer">Atlas Cloud's new coding plan promotion</a> for more budget-friendly API access.
+      <a href="https://www.atlascloud.ai/zh?utm_source=github&utm_medium=link&utm_campaign=infinite-canvas" target="_blank" rel="noopener noreferrer">Atlas Cloud</a> is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities. Check out <a href="https://www.atlascloud.ai/console/coding-plan" target="_blank" rel="noopener noreferrer">Atlas Cloud's new coding plan promotion</a> for more budget-friendly API access.
     </td>
   </tr>
   <tr>
@@ -50,10 +50,10 @@
   </tr>
   <tr>
     <td width="190" align="center">
-      <a href="https://infistar.ai/register?aff=4X3V9NA9&amp;ref_source=link" target="_blank" rel="noopener noreferrer"><img src="assets/infistar.png" width="163" alt="Infistar.ai 无限星河"></a>
+      <a href="https://infistar.ai/register?aff=4X3V9NA9&ref_source=link" target="_blank" rel="noopener noreferrer"><img src="assets/infistar.png" width="163" alt="Infistar.ai 无限星河"></a>
     </td>
     <td>
-      <strong>无限画布 × Infistar.ai 无限星河｜内置原生画布 · 全能多模态 API</strong> 💡 原生集成，即点即用： Infistar.ai 已原生上架无限画布！同时提供低至官方 1 折的稳定 API 中转服务，模型倍率与调用明细全程透明。 🎨 多模态生图/生视频： 完美适配 Seedance、FLUX、Midjourney、Sora、Runway、Luma、可灵（Kling）等顶级图片与视频大模型。 🧠 全系语言模型： 覆盖 OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM 等国内外主流模型，兼容 OpenAI 标准接口。 ⚡ 动态调度： 多路供应保障高可用，拒绝断连。 🎁 专属福利： 通过 <a href="https://infistar.ai/register?aff=4X3V9NA9&amp;ref_source=link" target="_blank" rel="noopener noreferrer">专属链接</a> 注册，立享赠送额度/专属折扣/首充权益！
+      <strong>无限画布 × Infistar.ai 无限星河｜内置原生画布 · 全能多模态 API</strong> 💡 原生集成，即点即用： Infistar.ai 已原生上架无限画布！同时提供低至官方 1 折的稳定 API 中转服务，模型倍率与调用明细全程透明。 🎨 多模态生图/生视频： 完美适配 Seedance、FLUX、Midjourney、Sora、Runway、Luma、可灵（Kling）等顶级图片与视频大模型。 🧠 全系语言模型： 覆盖 OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM 等国内外主流模型，兼容 OpenAI 标准接口。 ⚡ 动态调度： 多路供应保障高可用，拒绝断连。 🎁 专属福利： 通过 <a href="https://infistar.ai/register?aff=4X3V9NA9&ref_source=link" target="_blank" rel="noopener noreferrer">专属链接</a> 注册，立享赠送额度/专属折扣/首充权益！
     </td>
   </tr>
 </table>
@@ -62,6 +62,7 @@
 
 - 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
 - AI 创作：浏览器前台直连你配置的 OpenAI 兼容接口，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
+- Agnes 协议：内置与 OpenAI / Gemini 同级的 Agnes AI 调用协议，渠道中选择即可使用其图片、视频、文本模型。
 - 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
 - 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布；
 - Codex App 插件：提供 Codex app 插件，安装后会自动注册 MCP 并尝试拉起本地 Agent。
@@ -100,6 +101,41 @@ docker compose up -d
 首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
 
 如果默认的OpenAI接口调用方式与您的API不同，可自定义生图/视频脚本调用。
+
+## Agnes AI 协议渠道
+
+[Agnes AI](https://agnes-ai.com) 并非完全兼容 OpenAI 协议（不支持 `/responses`、图片请求参数结构不同、视频轮询为自定义端点、无语音接口），因此项目将其实现为与 OpenAI / Gemini **同级的第三种调用协议**。
+
+### 使用方式
+
+1. 进入右上角「配置」→ 渠道管理，新建渠道
+2. 协议选择 **Agnes**，`Base URL` 会自动填入官方网关 `https://apihub.agnes-ai.com/v1`
+3. 填入 `API Key`，添加模型并设置能力类型：
+
+| 模型 | 能力 | 说明 |
+| --- | --- | --- |
+| `agnes-image-2.1-flash` | image | 文生图 / 图生图（参考图自动压缩后经 `extra_body.image` 传递） |
+| `agnes-video-v2.0` | video | 文生视频 / 图生视频（`POST /videos` 建任务 + `GET /agnesapi` 轮询） |
+| `agnes-2.5-flash` | text | 图片反推 / 文本问答（走 `/chat/completions` 流式接口） |
+
+### 能力与限制
+
+- **支持**：文生图、图生图（参考图压缩至 1024 边长、服务繁忙 503 自动重试 2 次）、图片反推、视频生成（帧数遵循 `8n+1` 规则、按分辨率与横竖屏自动推导宽高、60 秒长间隔轮询并容忍限流）
+- **不支持**：蒙版编辑（会给出明确提示）、音频生成（Agnes 暂无 TTS 接口）
+- **跨域**：本地开发通过 Vite 代理（`/api/ai` → API 网关、`/api/image-proxy` / `/api/proxy` → 图片直链域）解决 CORS；生产环境直连官方网关；生成图片直链加载失败时自动走代理回退，全部失败则保留远程 URL
+
+### 实现说明（最小侵入设计）
+
+所有 Agnes 逻辑集中在独立模块 [`web/src/services/api/agnes.ts`](web/src/services/api/agnes.ts)，现有文件仅做插入式接线：
+
+- `use-config-store.ts`：`ApiCallFormat` 联合类型增加 `"agnes"`，`defaultBaseUrlForApiFormat` 返回官方网关
+- `channel-editor-drawer.tsx` / `app-config-modal.tsx`：协议下拉选项与标签
+- `image.ts` / `video.ts` / `audio.ts`：在既有 gemini 分支后追加 `apiFormat === "agnes"` 分支（与 gemini 分支同构）
+- `image-storage.ts`：agnes 域名图片直链的代理回退链
+- `vite.config.ts`：三条开发代理
+- i18n：`apiErrors` 段新增中英双语文案
+
+OpenAI / Gemini / 插件渠道的既有行为不受任何影响；旧渠道持久化数据经 `normalizeApiFormat` 归一化后保持不变。
 
 ## 效果展示
 
