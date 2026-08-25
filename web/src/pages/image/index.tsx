@@ -2,7 +2,6 @@ import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download,
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
-import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
@@ -10,6 +9,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { downloadMedia } from "@/lib/download";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -236,7 +236,7 @@ export default function ImagePage() {
     }, [autoRunToken]);
 
     const downloadImage = (image: GeneratedImage, index: number) => {
-        saveAs(image.dataUrl, `image-${index + 1}.png`);
+        void downloadMedia(image.dataUrl, `image-${index + 1}.png`);
     };
 
     const addResultToReferences = async (image: GeneratedImage, index: number) => {

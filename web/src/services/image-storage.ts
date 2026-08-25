@@ -22,7 +22,7 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
     let blob: Blob;
     if (typeof input === "string" && isAgnesMediaUrl(input)) {
         // Agnes image URLs may reject CORS fetches; try dev proxies, then keep the remote URL as a last resort.
-        const fetched = await fetchAgnesImageBlob(input);
+        const fetched = await fetchRemoteMediaBlob(input, (mimeType) => mimeType.startsWith("image/"));
         if (!fetched) {
             const meta = await readImageMeta(input);
             return { url: input, storageKey: "", width: meta.width, height: meta.height, bytes: 0, mimeType: meta.mimeType || "image/png" };
@@ -43,19 +43,22 @@ function isAgnesMediaUrl(url: string) {
     return /^https?:\/\//i.test(url) && url.toLowerCase().includes("agnes");
 }
 
-async function fetchAgnesImageBlob(url: string): Promise<Blob | null> {
+/**
+ * Fetch a remote media URL as a Blob through the fallback chain:
+ * direct CORS fetch → /api/image-proxy<path> (dev, host-locked to platform-outputs) → /api/proxy?url= (dev passthrough).
+ * `isAcceptable` gates the mime type so callers only store real media (a bad proxy hit returns the SPA HTML shell).
+ */
+export async function fetchRemoteMediaBlob(url: string, isAcceptable: (mimeType: string) => boolean): Promise<Blob | null> {
     const attempts: Array<() => Promise<Blob | null>> = [
-        () => fetchBlobWithTimeout(url, { mode: "cors" }),
+        () => fetchBlobWithTimeout(url, { mode: "cors" }, isAcceptable),
         () => {
             const urlObj = new URL(url);
-            return fetchBlobWithTimeout(`/api/image-proxy${urlObj.pathname}${urlObj.search}`);
+            return fetchBlobWithTimeout(`/api/image-proxy${urlObj.pathname}${urlObj.search}`, undefined, isAcceptable);
         },
-        () => fetchBlobWithTimeout(`/api/proxy?url=${encodeURIComponent(url)}`),
+        () => fetchBlobWithTimeout(`/api/proxy?url=${encodeURIComponent(url)}`, undefined, isAcceptable),
     ];
     for (const attempt of attempts) {
         try {
-            // In production the proxy paths fall back to the SPA shell (200 + HTML);
-            // only accept real image blobs so a bad fetch can fall through to the next attempt.
             const blob = await attempt();
             if (blob) return blob;
         } catch {
@@ -65,14 +68,14 @@ async function fetchAgnesImageBlob(url: string): Promise<Blob | null> {
     return null;
 }
 
-async function fetchBlobWithTimeout(input: string, init?: RequestInit): Promise<Blob | null> {
+async function fetchBlobWithTimeout(input: string, init: RequestInit | undefined, isAcceptable: (mimeType: string) => boolean): Promise<Blob | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     try {
         const response = await fetch(input, { ...init, signal: controller.signal });
         if (!response.ok) return null;
         const blob = await response.blob();
-        return blob.type.startsWith("image/") ? blob : null;
+        return isAcceptable(blob.type) ? blob : null;
     } finally {
         clearTimeout(timer);
     }

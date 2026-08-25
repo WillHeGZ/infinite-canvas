@@ -88,24 +88,58 @@ function withAgnesSystemMessage(config: AiConfig, messages: AiTextMessage[]): Ai
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
-/** Agnes normalizes sizes server-side; map quality + ratio (or explicit WxH) to a pixel size. */
-const AGNES_QUALITY_EDGE: Record<string, number> = { low: 1024, medium: 2048, high: 2880, standard: 1024, hd: 2048 };
+/**
+ * Agnes image tier whitelist. The gateway assigns the rate-limit tier from `size`; custom pixel
+ * sizes (e.g. 2736x1536) get bucketed server-side and can silently land in a stricter tier
+ * (3K = 1 request/minute). Always send an explicit tier + ratio so the bucket is deterministic.
+ * Official 2K + 16:9 → 2624x1472; 3K + 1:1 → 3072x3072; 4K + 9:16 → 2944x5248, etc.
+ */
+type AgnesImageTier = "1K" | "2K" | "3K" | "4K";
 
-function resolveAgnesSize(quality: string, size: string) {
-    const value = (size || "").trim();
-    if (/^\d+x\d+$/i.test(value)) return value;
-    if (!value || value.toLowerCase() === "auto") return "1024x1024";
-    const parts = value.split(":");
-    if (parts.length !== 2) return "1024x1024";
-    const rw = Number(parts[0]);
-    const rh = Number(parts[1]);
-    if (!Number.isFinite(rw) || !Number.isFinite(rh) || rw <= 0 || rh <= 0) return "1024x1024";
-    const base = AGNES_QUALITY_EDGE[quality.trim().toLowerCase()] || 2048;
-    const longRatio = Math.max(rw, rh) / Math.min(rw, rh);
-    const longSide = Math.max(256, Math.round(Math.sqrt(base * base * longRatio) / 16) * 16);
-    const shortSide = Math.max(256, Math.round(longSide / longRatio / 16) * 16);
-    return rw >= rh ? `${longSide}x${shortSide}` : `${shortSide}x${longSide}`;
+function agnesTierFromLongEdge(longEdge: number): AgnesImageTier {
+    if (longEdge <= 1024) return "1K";
+    if (longEdge <= 2048) return "2K";
+    if (longEdge <= 3072) return "3K";
+    return "4K";
 }
+
+/** Request-body tier: explicit WxH keeps its bucket by long edge (preserves "9:16(4k)" etc.), otherwise quality maps low→1K / auto·medium→2K / high→3K. */
+function resolveAgnesImageTier(quality: string, size: string): AgnesImageTier {
+    const dims = (size || "").trim().match(/^(\d+)x(\d+)$/i);
+    if (dims && Number(dims[1]) > 0 && Number(dims[2]) > 0) return agnesTierFromLongEdge(Math.max(Number(dims[1]), Number(dims[2])));
+    const value = (quality || "").trim().toLowerCase();
+    if (value === "low" || value === "standard") return "1K";
+    if (value === "high") return "3K";
+    if (value === "medium" || value === "hd") return "2K";
+    if (/^\d+$/.test(value)) return agnesTierFromLongEdge(Number(value));
+    return "2K";
+}
+
+/** Request-body ratio: snap the configured size (WxH or "w:h") onto the official 8-value whitelist; "auto"/empty → official default "1:1". */
+function resolveAgnesImageRatio(size: string) {
+    const value = (size || "").trim();
+    let ratio = 1;
+    const dims = value.match(/^(\d+)x(\d+)$/i);
+    const pair = value.match(/^(\d+(?:\.\d+)?)[::](\d+(?:\.\d+)?)$/);
+    if (dims && Number(dims[1]) > 0 && Number(dims[2]) > 0) ratio = Number(dims[1]) / Number(dims[2]);
+    else if (pair && Number(pair[1]) > 0 && Number(pair[2]) > 0) ratio = Number(pair[1]) / Number(pair[2]);
+    let best = AGNES_IMAGE_ASPECT_RATIOS[0];
+    for (const entry of AGNES_IMAGE_ASPECT_RATIOS) {
+        if (Math.abs(entry[0] - ratio) < Math.abs(best[0] - ratio)) best = entry;
+    }
+    return best[1];
+}
+
+const AGNES_IMAGE_ASPECT_RATIOS: Array<[number, string]> = [
+    [21 / 9, "21:9"],
+    [16 / 9, "16:9"],
+    [3 / 2, "3:2"],
+    [4 / 3, "4:3"],
+    [1, "1:1"],
+    [3 / 4, "3:4"],
+    [2 / 3, "2:3"],
+    [9 / 16, "9:16"],
+];
 
 async function compressAgnesReference(dataUrl: string, maxEdge: number): Promise<string> {
     try {
@@ -141,13 +175,40 @@ function isAgnesBusyError(error: unknown): boolean {
 }
 
 function isAgnesRateLimitError(error: unknown): boolean {
-    if (axios.isAxiosError(error)) {
-        if (error.response?.status === 429) return true;
-        const data = error.response?.data;
-        const message = String(data?.msg || data?.message || "");
-        return message.includes("rate limit") || message.includes("限流") || message.includes("exceeded");
-    }
-    return false;
+    if (!axios.isAxiosError(error)) return false;
+    if (error.response?.status === 429) return true;
+    const data = error.response?.data;
+    if (typeof data === "string") return /rate\s*limit|限流/i.test(data);
+    const message = String(data?.msg || data?.message || data?.error?.message || error.message || "");
+    const code = String(data?.code || data?.error?.code || "");
+    return code === "rate_limit_exceeded" || /rate\s*limit|rate_limit|限流/i.test(message);
+}
+
+/** Parse the retry wait from a rate-limit message ("3K tier allows 1 requests per 1 minute(s)" → 61s); default 61s. */
+function agnesRateLimitWaitMs(error: unknown): number {
+    const data = axios.isAxiosError(error) ? error.response?.data : null;
+    const message = String((typeof data === "string" ? data : data?.error?.message || data?.msg || data?.message) || "");
+    const minutes = message.match(/per\s+(\d+)\s*minute/i);
+    if (minutes) return Number(minutes[1]) * 60_000 + 1_000;
+    const seconds = message.match(/(?:per|after|in)\s+(\d+)\s*second/i);
+    if (seconds) return Number(seconds[1]) * 1_000 + 1_000;
+    return 61_000;
+}
+
+/** Abort-aware delay: rejects immediately with AbortError once the caller cancels generation. */
+function agnesDelay(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+        const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, ms);
+        function onAbort() {
+            clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+        }
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
 }
 
 function parseAgnesImagePayload(payload: AgnesImageResponse) {
@@ -253,7 +314,8 @@ async function requestAgnesImagesOnce(config: AiConfig, prompt: string, referenc
     const body: Record<string, unknown> = {
         model: config.model,
         prompt: withAgnesSystemPrompt(config, prompt),
-        size: resolveAgnesSize(config.quality, config.size),
+        size: resolveAgnesImageTier(config.quality, config.size),
+        ratio: resolveAgnesImageRatio(config.size),
     };
     if (references.length > 0) {
         const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
@@ -266,7 +328,9 @@ async function requestAgnesImagesOnce(config: AiConfig, prompt: string, referenc
             response_format: "url",
         };
     }
-    const maxAttempts = 2;
+    // Tiers like 3K/4K allow ~1 request per minute; retry across the rate-limit window (6 attempts
+    // covers a 3-image batch on a 1 RPM tier) and abort immediately when the user cancels.
+    const maxAttempts = 6;
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -281,8 +345,9 @@ async function requestAgnesImagesOnce(config: AiConfig, prompt: string, referenc
             return parseAgnesImagePayload(response.data);
         } catch (error) {
             lastError = error;
-            if (!isAgnesBusyError(error) || attempt === maxAttempts) throw error;
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            const rateLimited = isAgnesRateLimitError(error);
+            if ((!rateLimited && !isAgnesBusyError(error)) || attempt === maxAttempts) throw error;
+            await agnesDelay(rateLimited ? agnesRateLimitWaitMs(error) : 3000, options?.signal);
         }
     }
     throw lastError instanceof Error ? lastError : new Error(apiText("requestFailed"));

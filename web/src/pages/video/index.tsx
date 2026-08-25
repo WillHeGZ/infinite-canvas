@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
-import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -11,6 +10,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { downloadMedia } from "@/lib/download";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -293,7 +293,7 @@ export default function VideoPage() {
     };
 
     const downloadVideo = (video: GeneratedVideo) => {
-        saveAs(video.url, "video.mp4");
+        void downloadMedia(video.url, `video-${Date.now()}.mp4`);
     };
 
     const saveResultToAssets = (video: GeneratedVideo) => {

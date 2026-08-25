@@ -38,9 +38,51 @@ function localPluginsManifest(): Plugin {
     };
 }
 
+// Generic passthrough proxy for /api/proxy?url=<encoded http(s) url> (dev only).
+// The built-in proxy option cannot do this: without a rewrite it forwards the literal
+// path "/api/proxy?url=..." to the target host, which the object storage answers with NoSuchKey.
+function remoteUrlPassthroughProxy(): Plugin {
+    return {
+        name: "remote-url-passthrough-proxy",
+        configureServer(server) {
+            server.middlewares.use("/api/proxy", async (req, res) => {
+                try {
+                    const requestUrl = new URL(req.url || "", "http://localhost");
+                    const target = requestUrl.searchParams.get("url");
+                    if (!target || !/^https?:\/\//i.test(target)) {
+                        res.statusCode = 400;
+                        res.end("Missing or invalid url parameter");
+                        return;
+                    }
+                    const upstream = await fetch(target);
+                    if (!upstream.ok || !upstream.body) {
+                        res.statusCode = upstream.status || 502;
+                        res.end(`Upstream responded ${upstream.status}`);
+                        return;
+                    }
+                    res.statusCode = 200;
+                    const contentType = upstream.headers.get("content-type");
+                    if (contentType) res.setHeader("Content-Type", contentType);
+                    res.setHeader("Access-Control-Allow-Origin", "*");
+                    const reader = upstream.body.getReader();
+                    for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        res.write(value);
+                    }
+                    res.end();
+                } catch {
+                    res.statusCode = 502;
+                    res.end("Proxy fetch failed");
+                }
+            });
+        },
+    };
+}
+
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
-    plugins: [react(), localPluginsManifest()],
+    plugins: [react(), localPluginsManifest(), remoteUrlPassthroughProxy()],
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),
@@ -63,11 +105,8 @@ export default defineConfig({
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/image-proxy/, ""),
             },
-            "/api/proxy": {
-                target: "https://platform-outputs.agnes-ai.space",
-                changeOrigin: true,
-                ws: true,
-            },
+            // /api/proxy is handled by remoteUrlPassthroughProxy() above (needs ?url= parsing,
+            // which the built-in path-based proxy cannot express).
         },
     },
 });
