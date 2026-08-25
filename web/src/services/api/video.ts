@@ -8,6 +8,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { AGNES_VIDEO_POLL, createAgnesVideoTask, pollAgnesVideoTask } from "./agnes";
 import { runModelPlugin } from "./model-plugin";
+import type { ReferenceAudio } from "@/types/media";
 import type { ReferenceImage } from "@/types/image";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
@@ -34,8 +35,8 @@ function aiHeaders(config: AiConfig, contentType?: string) {
     };
 }
 
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
-    const task = await createVideoGenerationTask(config, prompt, references, options);
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: RequestOptions, audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationResult> {
+    const task = await createVideoGenerationTask(config, prompt, references, options, audioReferences);
     // Agnes videos generate slowly; poll them on a longer cadence than the default OpenAI cadence.
     const { intervalMs, maxAttempts } = task.provider === "agnes" ? AGNES_VIDEO_POLL : { intervalMs: 2500, maxAttempts: 120 };
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -49,13 +50,13 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     throw new Error(apiText("videoTimeout", { provider: "" }));
 }
 
-export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: RequestOptions): Promise<VideoGenerationTask> {
+export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: RequestOptions, audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationTask> {
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     const script = resolveModelScript(config, selectedModel);
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
-    if (requestConfig.apiFormat === "agnes") return createAgnesVideoTask(requestConfig, selectedModel, prompt, references, options);
+    if (requestConfig.apiFormat === "agnes") return createAgnesVideoTask(requestConfig, selectedModel, prompt, references, options, audioReferences);
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
 

@@ -55,6 +55,7 @@ export type CanvasNodeMetadata = {
     textCount?: number;
     seconds?: string;
     vquality?: string;
+    videoMode?: string;
     generateAudio?: string;
     watermark?: string;
     audioVoice?: string;

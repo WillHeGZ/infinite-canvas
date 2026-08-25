@@ -3,10 +3,12 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { readImageMeta } from "@/lib/image-utils";
+import { getMediaBlob } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
 import type { AiTextMessage } from "./image";
 import type { VideoGenerationResult, VideoGenerationTask, VideoGenerationTaskState } from "./video";
+import type { ReferenceAudio } from "@/types/media";
 import type { ReferenceImage } from "@/types/image";
 
 // Self-contained Agnes AI adapter for channels with apiFormat === "agnes".
@@ -15,6 +17,16 @@ import type { ReferenceImage } from "@/types/image";
 // ./video are compile-time only, keeping runtime dependencies one-directional.
 
 type RequestOptions = { signal?: AbortSignal };
+
+/** Agnes video model generation: v2.5 exposes the multimodal reference API, v2.0 only keyframes. */
+export function isAgnesVideo25Model(model: string) {
+    return /video/i.test(model) && /2\.5/.test(model);
+}
+
+/** Flash video models (e.g. agnes-video-2.5-flash): same body as 2.5 but max 5 reference images and model_name required when polling. */
+export function isAgnesVideoFlashModel(model: string) {
+    return /video/i.test(model) && /flash/i.test(model);
+}
 
 /** Video polling cadence for Agnes tasks (generation is slow; be gentle with /agnesapi). */
 export const AGNES_VIDEO_POLL = { intervalMs: 60000, maxAttempts: 240 };
@@ -51,8 +63,9 @@ function agnesApiUrl(config: Pick<AiConfig, "baseUrl">, path: string) {
     return `${/\/v1$/i.test(base) ? base : `${base}/v1`}${path}`;
 }
 
-function agnesPollUrl(baseUrl: string, videoId: string) {
-    const query = `?video_id=${encodeURIComponent(videoId)}`;
+function agnesPollUrl(baseUrl: string, videoId: string, modelName?: string) {
+    // Flash models reject a bare video_id lookup for keyframe/reference tasks; model_name is required.
+    const query = `?video_id=${encodeURIComponent(videoId)}${modelName ? `&model_name=${encodeURIComponent(modelName)}` : ""}`;
     if (import.meta.env.DEV) return `/api/ai/agnesapi${query}`;
     const root = baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
     return `${root}/agnesapi${query}`;
@@ -337,21 +350,25 @@ function agnesVideoBaseSize(vquality: string) {
     return Number(value.replace(/p$/i, "")) || 720;
 }
 
+/**
+ * Mirror the video panel's normalizeVideoSizeValue so the wire ratio matches what the user saw:
+ * portrait ratios → 720x1280, everything else (incl. "1:1", "auto") → 1280x720.
+ * Cannot import the panel helper (the panel imports this module); keep this in sync with it.
+ */
+function agnesVideoSizeValue(size: string) {
+    const value = (size || "").trim();
+    if (/^\d+x\d+$/i.test(value)) return value;
+    if (["9:16", "2:3", "3:4"].includes(value)) return "720x1280";
+    return "1280x720";
+}
+
 function normalizeAgnesVideoResolution(size: string, vquality: string) {
     const baseSize = agnesVideoBaseSize(vquality);
-    const value = (size || "").trim();
-    const dims = value.match(/^(\d+)x(\d+)$/i);
-    if (dims) {
-        const w = Number(dims[1]);
-        const h = Number(dims[2]);
-        if (w > 0 && h > 0) {
-            if (h > w) return { width: Math.round((baseSize * 9) / 16), height: baseSize };
-            if (w === h) return { width: baseSize, height: baseSize };
-            return { width: Math.round((baseSize * 16) / 9), height: baseSize };
-        }
-    }
-    if (value === "9:16" || value === "2:3" || value === "3:4") return { width: Math.round((baseSize * 9) / 16), height: baseSize };
-    if (value === "1:1") return { width: baseSize, height: baseSize };
+    const dims = agnesVideoSizeValue(size).match(/^(\d+)x(\d+)$/i);
+    const w = Number(dims?.[1]) || 1280;
+    const h = Number(dims?.[2]) || 720;
+    if (h > w) return { width: Math.round((baseSize * 9) / 16), height: baseSize };
+    if (w === h) return { width: baseSize, height: baseSize };
     return { width: Math.round((baseSize * 16) / 9), height: baseSize };
 }
 
@@ -362,21 +379,103 @@ function normalizeAgnesNumFrames(seconds: string) {
     return Math.min(441, Math.floor((numFrames - 1) / 8) * 8 + 1);
 }
 
-export async function createAgnesVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+function blobToAgnesDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("blob read failed"));
+        reader.readAsDataURL(blob);
+    });
+}
+
+/** Convert an audio reference (IndexedDB / blob: / remote URL) to a data URL the Agnes gateway accepts. */
+async function audioRefToDataUrl(audio: { url?: string; storageKey?: string }): Promise<string> {
+    if (audio.storageKey) {
+        const blob = await getMediaBlob(audio.storageKey);
+        if (blob) return blobToAgnesDataUrl(blob);
+    }
+    if (audio.url?.startsWith("data:")) return audio.url;
+    if (audio.url?.startsWith("blob:")) return blobToAgnesDataUrl(await (await fetch(audio.url)).blob());
+    if (audio.url && /^https?:\/\//i.test(audio.url)) return audio.url;
+    return "";
+}
+
+type AgnesVideoMode = "text" | "keyframe" | "reference";
+
+/**
+ * Effective Agnes video mode:
+ * - no reference media at all → text (both UI modes fall back to text-to-video)
+ * - v2.0 models → keyframe only (the reference API does not exist on v2.0)
+ * - v2.5 models → the selected mode (default "reference")
+ */
+function resolveAgnesVideoMode(model: string, videoMode: string, hasMedia: boolean): AgnesVideoMode {
+    if (!hasMedia) return "text";
+    if (!isAgnesVideo25Model(model)) return "keyframe";
+    return videoMode === "keyframe" ? "keyframe" : "reference";
+}
+
+const AGNES_VIDEO_ASPECT_RATIOS: Array<[number, string]> = [
+    [21 / 9, "21:9"],
+    [16 / 9, "16:9"],
+    [4 / 3, "4:3"],
+    [1, "1:1"],
+    [3 / 4, "3:4"],
+    [9 / 16, "9:16"],
+];
+
+/** Map the configured size (WxH or ratio) onto the v2.5 aspect_ratio whitelist, normalizing first so the sent ratio matches the panel display. */
+function agnesV25AspectRatio(size: string) {
+    const dims = agnesVideoSizeValue(size).match(/^(\d+)x(\d+)$/i);
+    const ratio = dims && Number(dims[1]) > 0 && Number(dims[2]) > 0 ? Number(dims[1]) / Number(dims[2]) : 16 / 9;
+    let best = AGNES_VIDEO_ASPECT_RATIOS[0];
+    for (const entry of AGNES_VIDEO_ASPECT_RATIOS) {
+        if (Math.abs(entry[0] - ratio) < Math.abs(best[0] - ratio)) best = entry;
+    }
+    return best[1];
+}
+
+/** v2.5 body: mode + seconds(4-12) + size "720P" + aspect_ratio whitelist; never sends v2.0-style fields (400). */
+function buildAgnesV25Body(config: AiConfig, model: string, prompt: string, videoMode: string, images: string[], audios: string[]) {
+    const mode = resolveAgnesVideoMode(model, videoMode, images.length > 0 || audios.length > 0);
+    const seconds = String(Math.max(4, Math.min(12, Math.floor(Number(config.videoSeconds) || 5))));
+    const body: Record<string, unknown> = { model, prompt, mode, seconds, size: "720P", aspect_ratio: agnesV25AspectRatio(config.size) };
+    if (mode === "keyframe") {
+        if (images[0]) body.first_frame = images[0];
+        if (images[1]) body.last_frame = images[1];
+    } else if (mode === "reference") {
+        if (images.length > 0) body.images = images;
+        if (audios.length > 0) body.audios = audios;
+    }
+    return body;
+}
+
+/** v2.0 body: width/height/num_frames; 2 images → extra_body keyframes, 1 image → top-level image, 0 → pure text. */
+function buildAgnesV20Body(config: AiConfig, model: string, prompt: string, images: string[]) {
     const { width, height } = normalizeAgnesVideoResolution(config.size, config.vquality);
-    const payload: Record<string, unknown> = {
-        model: modelOptionName(model),
+    const body: Record<string, unknown> = {
+        model,
         prompt,
         width,
         height,
         num_frames: normalizeAgnesNumFrames(config.videoSeconds),
         frame_rate: 24,
     };
-    if (references.length > 0) {
-        const imageUrls = await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)));
-        const urls = imageUrls.filter((value) => Boolean(value));
-        if (urls.length > 0) payload.image = urls;
-    }
+    if (images.length >= 2) body.extra_body = { image: images.slice(0, 2), mode: "keyframes" };
+    else if (images.length === 1) body.image = images[0];
+    return body;
+}
+
+export async function createAgnesVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions, audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationTask> {
+    const modelName = modelOptionName(model);
+    const flash = isAgnesVideoFlashModel(modelName);
+    const v25 = isAgnesVideo25Model(modelName);
+    const maxReferenceImages = v25 ? (flash ? 5 : 7) : 2;
+    const imageUrls = await Promise.all(references.map((image) => imageToDataUrl(image).catch(() => "")));
+    const images = imageUrls.filter((value) => Boolean(value)).slice(0, v25 && config.videoMode !== "keyframe" ? maxReferenceImages : 2);
+    const audios = (await Promise.all(audioReferences.slice(0, 5).map((audio) => audioRefToDataUrl(audio).catch(() => "")))).filter((value) => Boolean(value));
+    if (v25 && config.videoMode === "keyframe" && references.length > 2) throw new Error(apiText("agnesKeyframeLimit"));
+    if (flash && config.videoMode !== "keyframe" && references.length > maxReferenceImages) throw new Error(apiText("agnesFlashImageLimit"));
+    const payload = v25 ? buildAgnesV25Body(config, modelName, prompt, config.videoMode, images, audios) : buildAgnesV20Body(config, modelName, prompt, images);
     try {
         const response = await axios.post<AgnesApiVideoResponse>(agnesApiUrl(config, "/videos"), payload, {
             headers: agnesHeaders(config, "application/json"),
@@ -393,8 +492,9 @@ export async function createAgnesVideoTask(config: AiConfig, model: string, prom
 
 export async function pollAgnesVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     try {
+        const pollModelName = modelOptionName(task.model);
         const response = task.videoId
-            ? await axios.get<AgnesApiVideoResponse>(agnesPollUrl(config.baseUrl, task.videoId), { headers: agnesHeaders(config), signal: options?.signal })
+            ? await axios.get<AgnesApiVideoResponse>(agnesPollUrl(config.baseUrl, task.videoId, isAgnesVideoFlashModel(pollModelName) ? pollModelName : undefined), { headers: agnesHeaders(config), signal: options?.signal })
             : await axios.get<AgnesApiVideoResponse>(agnesApiUrl(config, `/videos/${task.id}`), { headers: agnesHeaders(config), signal: options?.signal });
         const video = unwrapAgnesEnvelope(response.data, apiText("noVideoTask"));
         const url = agnesVideoResultUrl(video);

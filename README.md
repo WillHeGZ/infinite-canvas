@@ -115,7 +115,9 @@ docker compose up -d
 | 模型 | 能力 | 说明 |
 | --- | --- | --- |
 | `agnes-image-2.1-flash` | image | 文生图 / 图生图（参考图自动压缩后经 `extra_body.image` 传递） |
-| `agnes-video-v2.0` | video | 文生视频 / 图生视频（`POST /videos` 建任务 + `GET /agnesapi` 轮询） |
+| `agnes-video-v2.0` | video | 文生视频 / 图生视频 / 首尾帧（`POST /videos` 建任务 + `GET /agnesapi` 轮询） |
+| `agnes-video-2.5` | video | 文生视频 / 首尾帧 / 全能参考（多图 + 多音频，`<Picture N>` / `<Audio N>` 占位符指代素材） |
+| `agnes-video-2.5-flash` | video | 同 2.5；全能参考最多 5 张图，轮询自动带 `model_name`（720P 限时免费） |
 | `agnes-2.5-flash` | text | 图片反推 / 文本问答（走 `/chat/completions` 流式接口） |
 
 ### 能力与限制

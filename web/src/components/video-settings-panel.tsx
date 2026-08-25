@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { isAgnesVideo25Model } from "@/services/api/agnes";
 
 const resolutionOptions = [
     { value: "720", label: "720p" },
@@ -28,18 +29,26 @@ export const videoSecondOptions = secondOptions.map((value) => String(value));
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
+    /** The video model actually in effect; on the canvas this is the node model, in the workbench the selected videoModel. */
+    model?: string;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", model }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
     const seconds = config.videoSeconds || "6";
     const size = normalizeVideoSizeValue(config.size);
     const dimensions = readSizeDimensions(size);
     const resolution = normalizeVideoResolutionValue(config.vquality);
+    // Agnes-only generation mode; v2.5 supports reference + keyframe, v2.0 only keyframe.
+    // Resolve the channel of the effective video model so canvas nodes and mixed-channel setups behave like the global default.
+    const modelRequestConfig = resolveModelRequestConfig(config, model || config.videoModel || config.model);
+    const showModeGroup = modelRequestConfig.apiFormat === "agnes";
+    const videoMode = config.videoMode === "keyframe" ? "keyframe" : "reference";
+    const modeOptions = isAgnesVideo25Model(modelRequestConfig.model) ? ["reference", "keyframe"] : ["keyframe"];
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
@@ -49,6 +58,20 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
+                {showModeGroup ? (
+                    <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
+                        <div className="grid grid-cols-2 gap-2.5">
+                            {modeOptions.map((value) => (
+                                <OptionPill key={value} selected={videoMode === value} theme={theme} onClick={() => onConfigChange("videoMode", value)}>
+                                    {t(value === "reference" ? "settingsPanels.video.modeReference" : "settingsPanels.video.modeKeyframe")}
+                                </OptionPill>
+                            ))}
+                        </div>
+                        <div className="text-[11px] leading-relaxed" style={{ color: theme.node.muted }}>
+                            {t("settingsPanels.video.modeHint")}
+                        </div>
+                    </SettingGroup>
+                ) : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {resolutionOptions.map((item) => (
@@ -103,6 +126,10 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
 
 export function videoResolutionLabel(value: string) {
     return `${normalizeVideoResolutionValue(value)}p`;
+}
+
+export function videoModeLabel(value: string) {
+    return i18n.t(value === "keyframe" ? "settingsPanels.video.modeKeyframe" : "settingsPanels.video.modeReference");
 }
 
 export function videoSizeLabel(value: string) {
