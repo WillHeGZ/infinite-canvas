@@ -106,6 +106,12 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {
     const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));
     if (!url || url.startsWith("data:")) return url;
+    // Remote https URLs (e.g. Agnes CDN) reject CORS direct fetches; run the proxy fallback
+    // chain first so canvas reference images still hydrate into data URLs.
+    if (/^https?:/i.test(url)) {
+        const blob = await fetchRemoteMediaBlob(url, (mimeType) => mimeType.startsWith("image/"));
+        if (blob) return blobToDataUrl(blob);
+    }
     return blobToDataUrl(await (await fetch(url)).blob());
 }
 

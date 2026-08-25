@@ -142,7 +142,19 @@ export function buildNodeResponseMessages(context: NodeGenerationContext): AiTex
 
 export async function hydrateNodeGenerationContext(context: NodeGenerationContext) {
     const { imageToDataUrl } = await import("@/services/image-storage");
-    return { ...context, referenceImages: await Promise.all(context.referenceImages.map(async (image) => ({ ...image, dataUrl: await imageToDataUrl(image) }))) };
+    // A single unreadable reference (e.g. an expired remote URL whose proxy fetches all fail)
+    // must not abort the whole generation; skip it and let the request proceed with the rest.
+    const hydrated = await Promise.all(
+        context.referenceImages.map(async (image) => {
+            try {
+                return { ...image, dataUrl: await imageToDataUrl(image) };
+            } catch {
+                console.warn("[infinite-canvas] skipped unreadable reference image", image.url || image.storageKey || image.id);
+                return null;
+            }
+        }),
+    );
+    return { ...context, referenceImages: hydrated.filter((image): image is ReferenceImage => Boolean(image)) };
 }
 
 function readNodeTextInput(node: CanvasNodeData) {
