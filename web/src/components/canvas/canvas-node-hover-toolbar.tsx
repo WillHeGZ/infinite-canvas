@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { App, Modal, Segmented, Tooltip } from "antd";
-import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
+import { App, Dropdown, Modal, Segmented, Tooltip } from "antd";
+import { Camera, ChevronFirst, ChevronLast, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pause, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import type { VideoFrameTarget } from "@/lib/canvas/video-frame";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -36,6 +37,7 @@ type CanvasNodeHoverToolbarProps = {
     onReversePrompt: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
+    onCaptureFrame: (node: CanvasNodeData, target: VideoFrameTarget) => void;
     onDelete: (node: CanvasNodeData) => void;
     extraTools?: CanvasNodeToolbarItem[];
 };
@@ -73,6 +75,7 @@ export function CanvasNodeHoverToolbar({
     onReversePrompt,
     onRetry,
     onToggleFreeResize,
+    onCaptureFrame,
     onDelete,
     extraTools = [],
 }: CanvasNodeHoverToolbarProps) {
@@ -192,6 +195,27 @@ export function CanvasNodeHoverToolbar({
                 {toolbarTools.map((tool) => (
                     <ToolbarAction key={tool.id} {...tool} showLabel={isImage ? showImageToolLabels : true} />
                 ))}
+                {hasVideo ? (
+                    <Dropdown
+                        trigger={["click"]}
+                        menu={{
+                            items: [
+                                { key: "first", icon: <ChevronFirst className="size-4" />, label: t("canvas.nodeToolbar.firstFrame") },
+                                { key: "last", icon: <ChevronLast className="size-4" />, label: t("canvas.nodeToolbar.lastFrame") },
+                                { key: "current", icon: <Pause className="size-4" />, label: t("canvas.nodeToolbar.currentFrame") },
+                            ],
+                            onClick: ({ key }) => onCaptureFrame(node, key as VideoFrameTarget),
+                        }}
+                    >
+                        <Tooltip title={t("canvas.nodeToolbar.captureFrame")} placement="top" mouseEnterDelay={0.2} color="#ffffff" styles={{ root: { color: "#242529", boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
+                            <button type="button" className="group relative flex h-12 items-center whitespace-nowrap px-1.5" onClick={(event) => event.stopPropagation()} aria-label={t("canvas.nodeToolbar.captureFrame")}>
+                                <span className="flex h-9 items-center justify-center px-2 rounded-lg transition group-hover:bg-[#f0f0f1]">
+                                    <Camera className="size-4" />
+                                </span>
+                            </button>
+                        </Tooltip>
+                    </Dropdown>
+                ) : null}
                 {hasImage ? <ToolbarAction id="more" title={t("canvas.imageTools.configure")} label={t("canvas.imageTools.more")} icon={<Ellipsis className="size-4" />} active={imageToolSettingsOpen} onClick={openImageToolSettings} showLabel={showImageToolLabels} /> : null}
             </div>
             {hasImage ? (

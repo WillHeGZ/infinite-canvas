@@ -17,6 +17,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { captureVideoFrame, videoCurrentTimeLabel, type VideoFrameTarget } from "@/lib/canvas/video-frame";
 import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
@@ -1682,6 +1683,45 @@ function InfiniteCanvasPage() {
         [message, t],
     );
 
+    const handleCaptureFrame = useCallback(
+        async (node: CanvasNodeData, target: VideoFrameTarget) => {
+            if (!node.metadata?.content) return;
+            const src = node.metadata.content;
+            const liveVideo = target === "current" ? document.querySelector<HTMLVideoElement>(`video[data-node-id="${node.id}"]`) : null;
+            let dataUrl: string;
+            try {
+                dataUrl = await captureVideoFrame(src, target, liveVideo || undefined);
+            } catch (error) {
+                console.warn("[infinite-canvas] capture video frame failed", error);
+                message.error(t("canvas.projectPage.frameCaptureFailed"));
+                return;
+            }
+            const image = await uploadImage(dataUrl);
+            const size = fitNodeSize(image.width || node.width, image.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+            const existingCount = connectionsRef.current.filter((connection) => connection.fromNodeId === node.id).length;
+            const childId = nanoid();
+            const title = target === "first" ? t("canvas.nodeToolbar.firstFrame") : target === "last" ? t("canvas.nodeToolbar.lastFrame") : t("canvas.projectPage.currentFrameTitle", { time: videoCurrentTimeLabel(liveVideo) });
+            const child: CanvasNodeData = {
+                id: childId,
+                type: CanvasNodeType.Image,
+                title,
+                position: { x: node.position.x + node.width + 96, y: node.position.y + existingCount * (size.height + 16) },
+                width: size.width,
+                height: size.height,
+                metadata: {
+                    ...imageMetadata(image),
+                    prompt: node.metadata?.prompt,
+                },
+            };
+            setNodes((prev) => [...prev, child]);
+            setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setSelectedConnectionId(null);
+            message.success(t("canvas.projectPage.frameCaptured"));
+        },
+        [message, t],
+    );
+
     const maskEditImageNode = useCallback(
         async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload) => {
             if (!node.metadata?.content) return;
@@ -2908,6 +2948,7 @@ function InfiniteCanvasPage() {
                     onReversePrompt={createImageReversePromptNodes}
                     onRetry={(node) => void handleRetryNode(node)}
                     onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}
+                    onCaptureFrame={(node, target) => void handleCaptureFrame(node, target)}
                     onDelete={(node) => deleteNodes(new Set([node.id]))}
                 />
 
